@@ -1,0 +1,37 @@
+[package]
+name = "ndiscover"
+version = "0.2.0"
+description = "Find NETIO devices on the local network using the UDP Discover protocol"
+edition = "2024"
+default-run = "ndiscover-cli"
+
+[lib]
+name = "ndiscover_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ndiscover-cli"
+path = "src/main.rs"
+
+[[bin]]
+name = "ndiscover"
+path = "src/gui/main.rs"
+required-features = ["gui"]
+
+[workspace]
+members = ["ndiscover_control"]
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["clock"], optional = true }
+clap = { version = "4.5.31", features = ["derive"] }
+dirs = { version = "7.0.0", optional = true }
+eframe = { version = "0.35.0", optional = true }
+getifaddrs = "0.1.5"
+ndiscover_control = { path = "ndiscover_control", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+socket2 = { version = "0.6.5", features = ["all"] }
+thiserror = "2.0.12"
+
+[features]
+gui = ["dep:chrono", "dep:dirs", "dep:eframe", "dep:ndiscover_control"]
