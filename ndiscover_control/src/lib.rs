@@ -62,6 +62,8 @@ pub enum Error {
     Terminated(String),
     #[error("the firmware update has no download address")]
     NoDownloadUrl,
+    #[error("the device did not report whether its outputs are on")]
+    NoOutputStates,
     #[error("could not generate the login token")]
     Random(#[source] getrandom::Error),
     #[error("the device sent an unexpected message")]
@@ -303,7 +305,7 @@ struct OutputInfo {
 }
 
 #[derive(Deserialize)]
-struct OutputMeasure {
+struct OutputStatus {
     id: u8,
     state: OutputState,
 }
@@ -435,19 +437,22 @@ impl Device {
     /// view outputs.
     pub fn outputs(&mut self) -> Result<Vec<Output>, Error> {
         let list: Items<OutputInfo> = self.read_topic("outputs/list")?;
-        let measure: Items<OutputMeasure> = self.read_topic("outputs/measure")?;
-        Ok(list
-            .items
+        let states: Items<OutputStatus> = self.read_topic("outputs/state")?;
+        list.items
             .into_iter()
-            .map(|output| Output {
-                on: measure
+            .map(|output| {
+                let status = states
                     .items
                     .iter()
-                    .any(|m| m.id == output.id && m.state == OutputState::On),
-                id: output.id,
-                name: output.name,
+                    .find(|status| status.id == output.id)
+                    .ok_or(Error::NoOutputStates)?;
+                Ok(Output {
+                    on: status.state == OutputState::On,
+                    id: output.id,
+                    name: output.name,
+                })
             })
-            .collect())
+            .collect()
     }
 
     /// Switches output `id`.

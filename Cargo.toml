@@ -2,6 +2,7 @@
 name = "ndiscover"
 version = "0.2.0"
 description = "Find NETIO devices on the local network using the UDP Discover protocol"
+repository = "https://github.com/ekkomaru/ndiscover"
 edition = "2024"
 default-run = "ndiscover-cli"
 

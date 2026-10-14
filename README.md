@@ -97,6 +97,10 @@ Or run it straight from the source: `cargo run --release --features gui --bin nd
   available. If it is, the firmware version turns orange with a **!**. Hover over it for the release
   notes and an **Update** button. The device is greyed out while it updates and comes back once it
   has restarted.
+- **Settings:** **Show full firmware version** lists the whole version a device reports instead
+  of only the firmware part. Settings are saved in `settings.json`, in the same folder as the saved
+  logins. Starting the app with `-d, --detailed` shows the full version for that run, whatever the
+  setting says.
 
 ### Saved logins
 

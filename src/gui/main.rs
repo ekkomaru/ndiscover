@@ -3,13 +3,16 @@
 
 mod control;
 mod saved;
+mod settings;
 
 use chrono::{DateTime, Local};
+use clap::Parser;
 use control::DeviceControl;
 use eframe::egui;
 use ndiscover_control::Security;
 use ndiscover_lib::{DiscoverError, NDiscoverDevice, ParseError, discover_with, local_networks};
 use saved::{SavedLogin, SavedLogins};
+use settings::Settings;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -31,6 +34,15 @@ const COPIED_FEEDBACK: Duration = Duration::from_secs(2);
 const UPDATE_SCAN_INTERVAL: Duration = Duration::from_secs(30);
 /// A firmware update that takes longer probably failed
 const UPDATE_LIMIT: Duration = Duration::from_secs(15 * 60);
+
+/// Desktop app that finds NETIO devices on the local network and controls them.
+#[derive(Parser)]
+#[command(version)]
+struct Args {
+    /// Shows the full firmware version in the device list.
+    #[arg(short, long)]
+    detailed: bool,
+}
 
 /// What the scan thread reports back to the UI
 enum ScanEvent {
@@ -93,9 +105,22 @@ struct App {
     updating: HashMap<String, Updating>,
     /// Device whose firmware update waits for the user's confirmation
     confirm_update: Option<Ipv4Addr>,
+    /// Number of saved logins while the user is asked whether to forget them
+    confirm_forget: Option<usize>,
+    /// Settings saved for the next start
+    settings: Settings,
+    /// Whether the settings window is open
+    settings_open: bool,
+    /// The full firmware version was asked for with --detailed, whatever the settings say
+    detailed_flag: bool,
 }
 
 impl App {
+    /// Shows the full firmware version instead of only the firmware part
+    fn detailed(&self) -> bool {
+        self.settings.detailed || self.detailed_flag
+    }
+
     /// Starts a scan on a background thread so the window stays responsive
     fn start_scan(&mut self, ctx: &egui::Context) {
         // The devices of the last scan stay listed, so the list does not flicker on every scan
@@ -257,7 +282,100 @@ impl App {
                 }
                 ui.weak(format!("Last scan {}", scan_time(last_scan)));
             }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("Settings").clicked() {
+                    self.settings_open = !self.settings_open;
+                }
+                if ui
+                    .button("Forget saved devices")
+                    .on_hover_text("Deletes all saved logins")
+                    .clicked()
+                {
+                    match saved::load_all() {
+                        Ok(logins) => self.confirm_forget = Some(logins.len()),
+                        Err(err) => self.warnings.push(format!(
+                            "Could not read the saved logins: {}",
+                            error_chain(&err)
+                        )),
+                    }
+                }
+            });
         });
+    }
+
+    fn settings_window(&mut self, ctx: &egui::Context) {
+        let mut changed = false;
+        egui::Window::new("Settings")
+            .open(&mut self.settings_open)
+            .collapsible(false)
+            .resizable(false)
+            // Under the Settings button, clear of the scan controls
+            .anchor(egui::Align2::RIGHT_TOP, [-8.0, 40.0])
+            .show(ctx, |ui| {
+                let label = "Show full firmware version";
+                if self.detailed_flag {
+                    ui.add_enabled(false, egui::Checkbox::new(&mut true, label))
+                        .on_disabled_hover_text("Turned on with --detailed");
+                } else {
+                    changed |= ui
+                        .checkbox(&mut self.settings.detailed, label)
+                        .on_hover_text(
+                            "Shows the whole version a device reports in the device list",
+                        )
+                        .changed();
+                }
+            });
+        if changed && let Err(err) = settings::save(&self.settings) {
+            self.warnings.push(format!(
+                "Could not save the settings: {}",
+                error_chain(&err)
+            ));
+        }
+    }
+
+    /// Asks before deleting all saved logins
+    fn confirm_forget(&mut self, ctx: &egui::Context) {
+        let Some(count) = self.confirm_forget else {
+            return;
+        };
+        let mut forget = false;
+        let mut close = false;
+        let modal = egui::Modal::new(egui::Id::new("confirm forget")).show(ctx, |ui| {
+            ui.set_max_width(420.0);
+            ui.heading("Forget saved devices");
+            if count == 0 {
+                ui.label("No devices have a saved login.");
+                ui.add_space(8.0);
+                close = ui.button("Close").clicked();
+                return;
+            }
+            ui.label(match count {
+                1 => "This deletes the saved login of 1 device.".to_string(),
+                count => format!("This deletes the saved logins of {count} devices."),
+            });
+            ui.label(
+                "Devices you are logged in to stay logged in until you log out or close the \
+                 app, but are no longer logged in to automatically.",
+            );
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                forget = ui.button("Forget").clicked();
+                close = ui.button("Cancel").clicked();
+            });
+        });
+        if forget {
+            self.saved_logins.clear();
+            if let Err(err) = saved::forget_all() {
+                self.warnings.push(format!(
+                    "Could not delete the saved logins: {}",
+                    error_chain(&err)
+                ));
+            }
+        }
+        if forget || close || modal.should_close() {
+            self.confirm_forget = None;
+        }
     }
 
     /// Logs in to the device at `ip` with `saved`, or opens its login window, unless that
@@ -326,7 +444,10 @@ impl App {
                             .and_then(|ip| self.controls.iter().find(|c| c.ip() == ip));
                         let update = control.and_then(DeviceControl::firmware_update).cloned();
                         let can_install = control.is_some_and(DeviceControl::can_install_firmware);
-                        let version = or_dash(&device.firmware_version);
+                        let version = match &device.full_version {
+                            Some(full_version) if self.detailed() => full_version,
+                            _ => or_dash(&device.firmware_version),
+                        };
                         let firmware = match update {
                             Some(_) => ui.label(
                                 egui::RichText::new(format!("{version} !"))
@@ -536,6 +657,8 @@ impl eframe::App for App {
         self.controls
             .retain_mut(|control| control.logged_in() || control.login_window(&ctx));
         self.confirm_update(&ctx);
+        self.confirm_forget(&ctx);
+        self.settings_window(&ctx);
     }
 }
 
@@ -621,6 +744,7 @@ fn error_chain(err: &(dyn std::error::Error + 'static)) -> String {
 }
 
 fn main() -> eframe::Result {
+    let args = Args::parse();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([960.0, 460.0])
@@ -634,9 +758,20 @@ fn main() -> eframe::Result {
         "ndiscover",
         options,
         Box::new(|cc| {
-            let mut app = App::default();
+            let mut app = App {
+                detailed_flag: args.detailed,
+                ..App::default()
+            };
             // Looks for devices right away
             app.start_scan(&cc.egui_ctx);
+            // After the scan started, which clears the warnings
+            app.settings = settings::load().unwrap_or_else(|err| {
+                app.warnings.push(format!(
+                    "Could not read the settings: {}",
+                    error_chain(&err)
+                ));
+                Settings::default()
+            });
             Ok(Box::new(app))
         }),
     )

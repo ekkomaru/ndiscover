@@ -106,11 +106,11 @@ fn serve(stream: TcpStream) {
                     .collect();
                 reply(&request, json!({ "items": items }))
             }
-            ("SUBSCRIBE", "outputs/measure") => {
+            ("SUBSCRIBE", "outputs/state") => {
                 let items: Vec<_> = (1..)
                     .zip(&outputs)
                     .map(|(id, (_, on))| {
-                        json!({ "id": id, "state": if *on { "on" } else { "off" }, "measure": {} })
+                        json!({ "id": id, "state": if *on { "on" } else { "off" } })
                     })
                     .collect();
                 reply(&request, json!({ "items": items }))

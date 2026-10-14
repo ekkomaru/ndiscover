@@ -7,6 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Forget saved devices** button in the desktop app, which deletes all saved logins
+- **Settings** window in the desktop app, with an option to show the full firmware version in the
+  device list. Settings are saved for the next start.
+- `--detailed` (`-d`) option for the desktop app, which shows the full firmware version for that
+  run
+
+### Fixed
+
+- Logging in to devices with firmware 5.4 failed, or showed all their outputs as off. The output
+  states are now read from the `outputs/state` topic, which also needs fewer user permissions.
+
 ## [0.2.0] - 2026-10-07
 
 First release.

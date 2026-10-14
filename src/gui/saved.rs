@@ -26,10 +26,15 @@ pub type SavedLogins = HashMap<String, SavedLogin>;
 /// Sessions save and forget logins from their own threads
 static FILE_LOCK: Mutex<()> = Mutex::new(());
 
-fn path() -> io::Result<PathBuf> {
+/// Folder of the app's files
+pub fn app_folder() -> io::Result<PathBuf> {
     let data_dir = dirs::data_local_dir()
         .ok_or_else(|| io::Error::new(ErrorKind::NotFound, "no app data folder"))?;
-    Ok(data_dir.join("ndiscover").join("logins.json"))
+    Ok(data_dir.join("ndiscover"))
+}
+
+fn path() -> io::Result<PathBuf> {
+    Ok(app_folder()?.join("logins.json"))
 }
 
 fn read(path: &Path) -> io::Result<SavedLogins> {
@@ -97,6 +102,14 @@ pub fn save(mac: &str, login: &SavedLogin) -> io::Result<()> {
     update(|logins| {
         logins.insert(mac.to_string(), login.clone());
         true
+    })
+}
+
+pub fn forget_all() -> io::Result<()> {
+    update(|logins| {
+        let changed = !logins.is_empty();
+        logins.clear();
+        changed
     })
 }
 

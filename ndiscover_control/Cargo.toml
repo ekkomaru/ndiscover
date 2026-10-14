@@ -2,6 +2,7 @@
 name = "ndiscover_control"
 version = "0.1.0"
 description = "Control NETIO devices with firmware 5.0 or newer over their WebSocket API"
+repository = "https://github.com/ekkomaru/ndiscover"
 edition = "2024"
 
 [dependencies]
